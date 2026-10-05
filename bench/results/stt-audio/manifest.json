@@ -1,0 +1,50 @@
+[
+  {
+    "id": "01",
+    "file": "01.wav",
+    "text": "Ayer fui al supermercado y compré unas manzanas.",
+    "voice": "ef_dora"
+  },
+  {
+    "id": "02",
+    "file": "02.wav",
+    "text": "¿Me puedes dar el recibo, por favor?",
+    "voice": "em_alex"
+  },
+  {
+    "id": "03",
+    "file": "03.wav",
+    "text": "No me di cuenta de que había un problema.",
+    "voice": "ef_dora"
+  },
+  {
+    "id": "04",
+    "file": "04.wav",
+    "text": "Quería quedarme en casa, pero al final salí.",
+    "voice": "em_alex"
+  },
+  {
+    "id": "05",
+    "file": "05.wav",
+    "text": "El niño estaba durmiendo cuando llegamos.",
+    "voice": "ef_dora"
+  },
+  {
+    "id": "06",
+    "file": "06.wav",
+    "text": "¿Has probado el gazpacho alguna vez?",
+    "voice": "em_alex"
+  },
+  {
+    "id": "07",
+    "file": "07.wav",
+    "text": "Me gustaría reservar una mesa para dos personas.",
+    "voice": "ef_dora"
+  },
+  {
+    "id": "08",
+    "file": "08.wav",
+    "text": "Creo que olvidé las llaves en el coche.",
+    "voice": "em_alex"
+  }
+]
