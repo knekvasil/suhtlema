@@ -48,28 +48,33 @@ All models stay resident (reloading per Turn is fatal). Runtime choices and rati
 
 ### STT — whisper.cpp
 
-| Model | Disk | RAM | M1 speed | Role |
+| Model | Disk | RAM | Measured warm | Role |
 |---|---|---|---|---|
-| tiny multilingual | 39 MB | ~0.3 GB | ~32× RT | rejected: Spanish WER too high |
-| **base multilingual** | 142 MB | ~0.4 GB | ~20× RT | **chosen** |
-| small | 466 MB | ~0.85 GB | ~12× RT | fallback if WER demands |
+| tiny multilingual | 39 MB | ~0.3 GB | ~159 ms | rejected: weaker on real speech |
+| **base multilingual** | 142 MB | ~0.4 GB | **~187 ms** | **chosen** |
+| small | 466 MB | ~0.85 GB | ~511 ms | rejected: too slow |
+
+(Warm times are for 2–3 s utterances. Whisper pads every window to 30 s, so short utterances pay a near-constant encode cost — speed scales with *duration*, not clip count.)
 
 Multilingual, not `.en`: Spanish is a core use case.
 
 ### LLM — llama.cpp
 
-| Model | Quant | RAM | M1 speed | Role |
+| Model | Quant | RAM | Measured sustained | Role |
 |---|---|---|---|---|
-| Llama 3.2 1B | Q4 | ~0.9 GB | ~50 tok/s | rejected: too weak for Spanish |
-| **Qwen3 4B** | Q4_K_M | ~2.7 GB | ~28 tok/s | **primary** |
-| Llama 3.2 3B | Q4_K_M | ~2.2 GB | ~25–35 tok/s | memory fallback only |
-| Qwen 3.5 4B | Q4 | ~2.7 GB | ~25–35 tok/s | optional newer alternative |
+| Llama 3.2 1B | Q4 | ~0.9 GB | — | rejected: too weak for Spanish |
+| **Qwen3 4B** | Q4_K_M | ~2.3 GB | **19.1 tok/s** (min 16.7) | **primary** |
+| Llama 3.2 3B | Q4_K_M | ~1.9 GB | 23.9 tok/s (min 20.8) | memory fallback only |
+| Qwen 3.5 4B | Q4 | ~2.3 GB | — | optional newer alternative |
+
+Sustained figures are from a 10-minute thermal soak on the fanless Air (raw data in `bench/results/soak-*.csv`).
 
 Qwen3 is a reasoning model: **thinking must be disabled** (`/no_think` or the non-thinking chat template) or it will wreck both latency and conversational tone. If Qwen3 4B + Whisper base + Kokoro will not co-reside within the GPU wire limit, drop the LLM to 3B — do **not** shrink Whisper.
 
 ### TTS — Kokoro-82M
 
-- `kokoro-v1.0.fp16.onnx` (169 MB, ~0.5 GB resident, ~20× RT) via ONNX Runtime; encoder/TTS on the ANE.
+- `kokoro-v1.0.fp16.onnx` (169 MB) via ONNX Runtime.
+- Measured on CPU ONNX: **~3.7× RT** (~260 ms for a 1 s clause) — *not* the ~20× achieved by MLX on larger chips. The ANE/CoreML offload is what must close this gap; treat it as required, not optional.
 - Spanish voices: `ef_dora` (female), `em_alex` (male), `em_santa`.
 - **Known risk:** Kokoro's Spanish voices are trained on far less data than its English voices. Sentence-level naturalness must be verified by human listen, not assumed. This is the leading quality threat to the "natural voice" success criterion.
 
@@ -78,11 +83,13 @@ Qwen3 is a reasoning model: **thinking must be disabled** (`/no_think` or the no
 | Component | RAM |
 |---|---|
 | Whisper base | ~0.4 GB |
-| Qwen3 4B Q4_K_M | ~2.7 GB |
+| Qwen3 4B Q4_K_M | ~2.3 GB |
 | Kokoro fp16 | ~0.5 GB |
 | KV cache (2048 ctx) | ~0.5 GB |
 | macOS + Go + ONNX | ~2.5 GB |
-| **Total** | **~6.6 GB** |
+| **Total** | **~6.2 GB** |
+
+The GPU working-set ceiling reported by llama.cpp on this machine is **5727 MB**.
 
 ## 5. Architecture (Milestone 1)
 
@@ -174,6 +181,8 @@ Establish what this specific machine does. **Vendor benches plus a soak, no besp
 - **10-minute continuous soak** per model, recording tok/s at minute 1/5/10.
 
 **Go/no-go:** Qwen3 4B holds ≥ ~15 tok/s after the soak, and Whisper base + Qwen3 4B + Kokoro co-reside without swapping.
+
+**Status: PASS on speed (16.7–21.4 tok/s sustained); co-residency needs a re-test on a quiesced machine.** See `bench/results/SUMMARY.md` for measured numbers and `bench/scripts/` for the harness.
 
 Deliverable: benchmark table (below).
 
