@@ -1,0 +1,17 @@
+# Build artifacts and cloned upstream sources
+vendor/
+build/
+
+# Downloaded model weights (large binaries) and generated audio
+models/
+bench/results/audio/
+
+# Python
+__pycache__/
+.venv/
+*.pyc
+
+# Logs and transient output
+*.log
+bench/results/*.tmp
+.DS_Store
