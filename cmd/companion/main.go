@@ -16,6 +16,7 @@ import (
 	"suhtlema/internal/servers"
 	"suhtlema/internal/stt"
 	"suhtlema/internal/tts"
+	"suhtlema/internal/vad"
 )
 
 const systemPrompt = "Eres un compañero de conversación en español. " +
@@ -31,6 +32,7 @@ usage:
   companion say <text...>       speak text aloud via TTS
   companion record             capture one utterance and play it back (mic check)
   companion monitor            live RMS meter for the mic, 8s (VAD diagnosis)
+  companion vadtest <wav>      run Silero over a 16kHz wav and report probabilities
   companion listen              record one utterance from the mic, then speak a reply
   companion converse            live spoken conversation, one turn at a time
   companion turn <file.wav>     transcribe then reply out loud (full turn)
@@ -87,6 +89,11 @@ func main() {
 		if err := audio.Monitor(8 * time.Second); err != nil {
 			fatal(err)
 		}
+	case "vadtest":
+		if len(os.Args) < 3 {
+			fatal(fmt.Errorf("vadtest needs a wav path"))
+		}
+		runVADTest(cfg, os.Args[2])
 	case "listen":
 		runListen(ctx, cfg, voice)
 	case "converse":
@@ -140,6 +147,82 @@ func runSay(voice *tts.Piper, text, out string) {
 		synth.Round(time.Millisecond), float64(len(samples))/float64(sr), sr, out)
 	start, _ := playBlocking(out) // audible output completes the loop
 	fmt.Printf("T3->T4 (play) : %s  (to audible start)\n", start.Round(time.Millisecond))
+}
+
+// runVADTest scores a 16 kHz mono WAV with Silero so the Go plumbing can be
+// verified without a microphone.
+func runVADTest(cfg *config.Config, wav string) {
+	samples, sr, err := readWAV(wav)
+	if err != nil {
+		fatal(err)
+	}
+	if sr != 16000 {
+		fatal(fmt.Errorf("vadtest needs 16000 Hz, got %d", sr))
+	}
+	detector, err := vad.New(cfg.VADModel)
+	if err != nil {
+		fatal(err)
+	}
+	defer detector.Close()
+	detector.Reset()
+
+	var nSpeech, nTotal int
+	var maxP float32
+	early := []string{}
+	window := make([]float32, audio.FramesPerBuffer)
+	for i := 0; i+audio.FramesPerBuffer <= len(samples); i += audio.FramesPerBuffer {
+		for j := 0; j < audio.FramesPerBuffer; j++ {
+			window[j] = float32(samples[i+j]) / 32768.0
+		}
+		p, err := detector.Prob(window)
+		if err != nil {
+			fatal(err)
+		}
+		nTotal++
+		if p > 0.5 {
+			nSpeech++
+		}
+		if p > maxP {
+			maxP = p
+		}
+		if nTotal <= 10 {
+			early = append(early, fmt.Sprintf("%.2f", p))
+		}
+	}
+	fmt.Printf("windows: %d  >0.5: %d (%.0f%%)  max: %.3f\n", nTotal, nSpeech, float64(nSpeech)*100/float64(nTotal), maxP)
+	fmt.Printf("first 10: %s\n", strings.Join(early, " "))
+}
+
+// readWAV loads a PCM WAV (mono or multi-channel) as int16 samples.
+func readWAV(path string) ([]int16, int, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(b) < 44 || string(b[:4]) != "RIFF" {
+		return nil, 0, fmt.Errorf("not a RIFF file")
+	}
+	channels := int(binary.LittleEndian.Uint16(b[22:24]))
+	rate := int(binary.LittleEndian.Uint32(b[24:28]))
+	bits := int(binary.LittleEndian.Uint16(b[34:36]))
+	dataStart := bytes.Index(b, []byte("data"))
+	if dataStart < 0 {
+		return nil, 0, fmt.Errorf("no data chunk")
+	}
+	dataStart += 8
+	raw := b[dataStart:]
+	if bits != 16 {
+		return nil, 0, fmt.Errorf("vadtest supports 16-bit PCM, got %d", bits)
+	}
+	out := make([]int16, 0, len(raw)/2/channels)
+	for i := 0; i+2*channels <= len(raw); i += 2 * channels {
+		var sum int32
+		for ch := 0; ch < channels; ch++ {
+			sum += int32(int16(binary.LittleEndian.Uint16(raw[i+2*ch:])))
+		}
+		out = append(out, int16(sum/int32(channels)))
+	}
+	return out, rate, nil
 }
 
 func runListen(ctx context.Context, cfg *config.Config, voice *tts.Piper) {

@@ -12,20 +12,22 @@ import (
 const (
 	sampleRate = 16000
 	window     = 512 // ~32 ms at 16 kHz
-	stateSize  = 128
+	stateDim   = 64
 )
 
-// Silero wraps the Silero VAD ONNX session. A single instance keeps the
-// recurrent state (h, c) between windows.
+// Silero wraps the Silero VAD v4 ONNX session (separate h/c LSTM state).
 type Silero struct {
-	mu    sync.Mutex
-	ses   *ort.AdvancedSession
-	in    *ort.Tensor[float32]
-	st    *ort.Tensor[float32]
-	sr    *ort.Tensor[int64]
-	out   *ort.Tensor[float32]
-	stN   *ort.Tensor[float32]
-	state []float32
+	mu  sync.Mutex
+	ses *ort.AdvancedSession
+	in  *ort.Tensor[float32]
+	h   *ort.Tensor[float32]
+	c   *ort.Tensor[float32]
+	sr  *ort.Tensor[int64]
+	out *ort.Tensor[float32]
+	hn  *ort.Tensor[float32]
+	cn  *ort.Tensor[float32]
+	hst []float32
+	cst []float32
 }
 
 var (
@@ -51,12 +53,12 @@ func envInit() error {
 	return envErr
 }
 
-// New loads the Silero VAD model into its own session.
+// New loads the Silero VAD v4 model into its own session.
 func New(modelPath string) (*Silero, error) {
 	if err := envInit(); err != nil {
 		return nil, fmt.Errorf("onnxruntime init: %w", err)
 	}
-	s := &Silero{state: make([]float32, 2*stateSize)}
+	s := &Silero{hst: make([]float32, 2*stateDim), cst: make([]float32, 2*stateDim)}
 
 	var created []ort.Value
 	cleanup := func() {
@@ -67,39 +69,49 @@ func New(modelPath string) (*Silero, error) {
 			_ = s.ses.Destroy()
 		}
 	}
+	set := func(t **ort.Tensor[float32], dims ...int64) error {
+		var err error
+		*t, err = ort.NewTensor(ort.NewShape(dims...), make([]float32, prod64(dims)))
+		if err != nil {
+			cleanup()
+			return err
+		}
+		created = append(created, *t)
+		return nil
+	}
+
+	if err := set(&s.in, 1, window); err != nil {
+		return nil, fmt.Errorf("vad tensor: %w", err)
+	}
+	if err := set(&s.h, 2, 1, stateDim); err != nil {
+		return nil, fmt.Errorf("vad tensor: %w", err)
+	}
+	if err := set(&s.c, 2, 1, stateDim); err != nil {
+		return nil, fmt.Errorf("vad tensor: %w", err)
+	}
+	if err := set(&s.out, 1, 1); err != nil {
+		return nil, fmt.Errorf("vad tensor: %w", err)
+	}
+	if err := set(&s.hn, 2, 1, stateDim); err != nil {
+		return nil, fmt.Errorf("vad tensor: %w", err)
+	}
+	if err := set(&s.cn, 2, 1, stateDim); err != nil {
+		return nil, fmt.Errorf("vad tensor: %w", err)
+	}
 
 	var err error
-	if s.in, err = ort.NewTensor(ort.NewShape(1, window), make([]float32, window)); err != nil {
-		return nil, fmt.Errorf("vad input tensor: %w", err)
-	}
-	created = append(created, s.in)
-	if s.st, err = ort.NewTensor(ort.NewShape(2, 1, stateSize), make([]float32, 2*stateSize)); err != nil {
-		cleanup()
-		return nil, fmt.Errorf("vad state tensor: %w", err)
-	}
-	created = append(created, s.st)
 	if s.sr, err = ort.NewTensor(ort.NewShape(1), []int64{sampleRate}); err != nil {
 		cleanup()
 		return nil, fmt.Errorf("vad sr tensor: %w", err)
 	}
 	created = append(created, s.sr)
-	if s.out, err = ort.NewTensor(ort.NewShape(1, 1), make([]float32, 1)); err != nil {
-		cleanup()
-		return nil, fmt.Errorf("vad output tensor: %w", err)
-	}
-	created = append(created, s.out)
-	if s.stN, err = ort.NewTensor(ort.NewShape(2, 1, stateSize), make([]float32, 2*stateSize)); err != nil {
-		cleanup()
-		return nil, fmt.Errorf("vad stateN tensor: %w", err)
-	}
-	created = append(created, s.stN)
 
 	s.ses, err = ort.NewAdvancedSession(
 		modelPath,
-		[]string{"input", "state", "sr"},
-		[]string{"output", "stateN"},
-		[]ort.Value{s.in, s.st, s.sr},
-		[]ort.Value{s.out, s.stN},
+		[]string{"input", "h", "c", "sr"},
+		[]string{"output", "hn", "cn"},
+		[]ort.Value{s.in, s.h, s.c, s.sr},
+		[]ort.Value{s.out, s.hn, s.cn},
 		nil,
 	)
 	if err != nil {
@@ -109,8 +121,7 @@ func New(modelPath string) (*Silero, error) {
 	return s, nil
 }
 
-// Prob scores a 512-sample window and advances the recurrent state. Frame
-// samples should be normalized to roughly [-1, 1].
+// Prob scores a 512-sample window (normalized ~[-1,1]) and advances state.
 func (s *Silero) Prob(frame []float32) (float32, error) {
 	if len(frame) != window {
 		return 0, fmt.Errorf("vad expects %d samples, got %d", window, len(frame))
@@ -119,26 +130,29 @@ func (s *Silero) Prob(frame []float32) (float32, error) {
 	defer s.mu.Unlock()
 
 	copy(s.in.GetData(), frame)
-	copy(s.st.GetData(), s.state)
+	copy(s.h.GetData(), s.hst)
+	copy(s.c.GetData(), s.cst)
 	s.sr.GetData()[0] = sampleRate
 	if err := s.ses.Run(); err != nil {
 		return 0, err
 	}
 	p := s.out.GetData()[0]
-	copy(s.state, s.stN.GetData())
+	copy(s.hst, s.hn.GetData())
+	copy(s.cst, s.cn.GetData())
 	return p, nil
 }
 
-// Reset clears the recurrent state.
+// Reset clears the LSTM state.
 func (s *Silero) Reset() {
-	for i := range s.state {
-		s.state[i] = 0
+	for i := range s.hst {
+		s.hst[i] = 0
+		s.cst[i] = 0
 	}
 }
 
-// Close releases the session and tensors. The environment is process-lifetime.
+// Close releases tensors and the session. The environment is process-lifetime.
 func (s *Silero) Close() {
-	for _, v := range []ort.Value{s.in, s.st, s.sr, s.out, s.stN} {
+	for _, v := range []ort.Value{s.in, s.h, s.c, s.sr, s.out, s.hn, s.cn} {
 		if v != nil {
 			_ = v.Destroy()
 		}
@@ -146,4 +160,12 @@ func (s *Silero) Close() {
 	if s.ses != nil {
 		_ = s.ses.Destroy()
 	}
+}
+
+func prod64(dims []int64) int {
+	p := 1
+	for _, d := range dims {
+		p *= int(d)
+	}
+	return p
 }
