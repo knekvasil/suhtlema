@@ -30,6 +30,7 @@ usage:
   companion chat <text...>      send a message to the companion
   companion say <text...>       speak text aloud via TTS
   companion record             capture one utterance and play it back (mic check)
+  companion monitor            live RMS meter for the mic, 8s (VAD diagnosis)
   companion listen              record one utterance from the mic, then speak a reply
   companion converse            live spoken conversation, one turn at a time
   companion turn <file.wav>     transcribe then reply out loud (full turn)
@@ -81,6 +82,10 @@ func main() {
 		runSay(voice, strings.Join(os.Args[2:], " "), "/tmp/suhtlema-say.wav")
 	case "record":
 		runRecord(ctx, voice)
+	case "monitor":
+		if err := audio.Monitor(8 * time.Second); err != nil {
+			fatal(err)
+		}
 	case "listen":
 		runListen(ctx, cfg, voice)
 	case "converse":
