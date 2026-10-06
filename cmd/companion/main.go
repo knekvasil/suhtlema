@@ -46,6 +46,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+	audio.SetVADModel(cfg.VADModel)
 	ctx := context.Background()
 
 	stop, err := servers.EnsureAll(ctx, cfg)

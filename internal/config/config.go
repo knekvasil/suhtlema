@@ -23,6 +23,7 @@ type Config struct {
 	TTSJSON   string
 	TTSPython string
 	TTSScript string
+	VADModel  string
 }
 
 const (
@@ -56,6 +57,7 @@ func Load() (*Config, error) {
 	c.TTSJSON = filepath.Join(root, "models/tts/piper/es_ES-carlfm-x_low.onnx.json")
 	c.TTSPython = filepath.Join(root, "bench/.venv/bin/python")
 	c.TTSScript = filepath.Join(root, "bench/scripts/tts_daemon.py")
+	c.VADModel = filepath.Join(root, "models/tts/silero_vad.onnx")
 	return c, nil
 }
 
