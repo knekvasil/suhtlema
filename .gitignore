@@ -1,6 +1,7 @@
 # Build artifacts and cloned upstream sources
 vendor/
 build/
+/bin/
 
 # Downloaded model weights (large binaries) and generated audio
 models/
