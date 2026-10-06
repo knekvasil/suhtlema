@@ -17,12 +17,18 @@ const (
 	SampleRate      = 16000
 	FramesPerBuffer = 512                // ~32 ms
 	preRollFrames   = 16                 // ~512 ms captured before onset fires
-	startThreshold  = 0.020
-	endThreshold    = 0.015
+	primeFrames     = 12                 // idle frames (~384 ms) before onset allowed
 	startFrames     = 3                  // ~96 ms of speech to start
 	Hangover        = 500 * time.Millisecond
 	MinDuration     = 250 * time.Millisecond
 	MaxDuration     = 30 * time.Second
+
+	// Adaptive noise-gate constants.
+	minOnsetLevel     = 0.018 // absolute RMS the signal must clear to start
+	onsetFloorRatio   = 3.0   // onset level = max(minOnsetLevel, floor*ratio)
+	offsetFloorRatio  = 1.6   // ending = signal below floor*ratio
+	floorAttackAlpha  = 0.20  // how fast the floor tracks falling level
+	floorDecayAlpha   = 0.002 // how slowly the floor tracks rising level
 )
 
 // durationOf converts a frame count to a wall duration at SampleRate.
@@ -63,6 +69,9 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 		startIdx     int
 		speechFrames int
 		silentFrames int
+		floor        float64
+		idleFrames   int
+		runFrames    int
 	}{}
 
 	callbacks := malgo.DeviceCallbacks{
@@ -78,12 +87,24 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 			mu.Lock()
 			defer mu.Unlock()
 			if !detailed.active {
-				if energy >= startThreshold {
+				// Track a slow noise floor while idle.
+				detailed.idleFrames++
+				if detailed.floor == 0 {
+					detailed.floor = energy
+				} else if energy < detailed.floor {
+					detailed.floor += floorAttackAlpha * (energy - detailed.floor)
+				} else {
+					detailed.floor += floorDecayAlpha * (energy - detailed.floor)
+				}
+
+				onset := energy >= minOnsetLevel && energy >= onsetFloorRatio*detailed.floor
+				if onset && detailed.idleFrames >= primeFrames {
 					detailed.speechFrames++
 					if detailed.speechFrames >= startFrames {
 						detailed.active = true
 						detailed.speechFrames = 0
 						detailed.silentFrames = 0
+						detailed.runFrames = 0
 						detailed.startIdx = len(buf)
 					}
 				} else {
@@ -99,13 +120,18 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 			}
 
 			buf = append(buf, frames...)
-			if energy < endThreshold {
+			detailed.runFrames++
+			offset := offsetFloorRatio * detailed.floor
+			if offset < minOnsetLevel/2 {
+				offset = minOnsetLevel / 2
+			}
+			if energy < offset {
 				detailed.silentFrames++
 			} else {
 				detailed.silentFrames = 0
 			}
 
-			speech := durationOf(len(buf) - detailed.startIdx)
+			speech := durationOf(detailed.runFrames)
 			silent := durationOf(detailed.silentFrames)
 			if (silent >= Hangover && speech >= MinDuration) || speech >= MaxDuration {
 				finished = time.Now()
