@@ -2,18 +2,16 @@ package tts
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sync"
 )
 
-// Piper is a warm client for the Piper TTS daemon.
-type Piper struct {
+// Kokoro is a warm client for the Kokoro TTS daemon.
+type Kokoro struct {
 	mu         sync.Mutex
 	cmd        *exec.Cmd
 	stdin      io.WriteCloser
@@ -21,29 +19,8 @@ type Piper struct {
 	SampleRate int
 }
 
-// SampleRate reads the voice's sample rate from its config JSON.
-func SampleRate(configJSON string) (int, error) {
-	var c struct {
-		Audio struct {
-			SampleRate int `json:"sample_rate"`
-		} `json:"audio"`
-	}
-	f, err := os.Open(configJSON)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	if err := json.NewDecoder(f).Decode(&c); err != nil {
-		return 0, err
-	}
-	if c.Audio.SampleRate == 0 {
-		return 0, fmt.Errorf("no sample_rate in %s", filepath.Base(configJSON))
-	}
-	return c.Audio.SampleRate, nil
-}
-
 // Start launches the daemon with a voice resident.
-func Start(model, python, script, voices, voice string, sampleRate int) (*Piper, error) {
+func Start(model, python, script, voices, voice string, sampleRate int) (*Kokoro, error) {
 	cmd := exec.Command(python, script, "--model", model, "--voices", voices, "--voice", voice)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -57,11 +34,11 @@ func Start(model, python, script, voices, voice string, sampleRate int) (*Piper,
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	return &Piper{cmd: cmd, stdin: stdin, stdout: stdout, SampleRate: sampleRate}, nil
+	return &Kokoro{cmd: cmd, stdin: stdin, stdout: stdout, SampleRate: sampleRate}, nil
 }
 
 // Synth synthesises text and returns int16 mono PCM at SampleRate.
-func (p *Piper) Synth(text string) ([]int16, error) {
+func (p *Kokoro) Synth(text string) ([]int16, error) {
 	if p == nil {
 		return nil, errors.New("tts not started")
 	}
@@ -96,7 +73,7 @@ func (p *Piper) Synth(text string) ([]int16, error) {
 }
 
 // Stop terminates the daemon.
-func (p *Piper) Stop() {
+func (p *Kokoro) Stop() {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}

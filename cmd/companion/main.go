@@ -89,7 +89,7 @@ func main() {
 		exitHooks = append(exitHooks, stop)
 	}
 
-	var voice *tts.Piper
+	var voice *tts.Kokoro
 	if needsTTS(os.Args[1]) {
 		voice, err = tts.Start(cfg.TTSModel, cfg.TTSPython, cfg.TTSScript, cfg.TTSVoices, cfg.TTSVoice, cfg.TTSSampleRate)
 		if err != nil {
@@ -170,7 +170,7 @@ func runChat(ctx context.Context, cfg *config.Config, text string) {
 		t.PromptMS, t.PredictedPerSecond, d.Round(time.Millisecond))
 }
 
-func runSay(voice *tts.Piper, text, out string) {
+func runSay(voice *tts.Kokoro, text, out string) {
 	samples, sr, synth, err := synth(voice, text)
 	if err != nil {
 		fatal(err)
@@ -261,7 +261,7 @@ func readWAV(path string) ([]int16, int, error) {
 	return out, rate, nil
 }
 
-func runListen(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
+func runListen(ctx context.Context, cfg *config.Config, voice *tts.Kokoro) {
 	fmt.Println("Escuchando... (termina con una pausa de medio segundo)")
 	recCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -293,7 +293,7 @@ func runRecord(ctx context.Context) {
 	_, _ = playBlocking(wav) // hear what the mic actually heard
 }
 
-func runConverse(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
+func runConverse(ctx context.Context, cfg *config.Config, voice *tts.Kokoro) {
 	sttClient := stt.New(cfg.WhisperEndpoint)
 	llmClient := llm.New(cfg.LlamaEndpoint)
 	history := []llm.Message{{Role: "system", Content: systemPrompt}}
@@ -365,7 +365,7 @@ func trimHistory(h []llm.Message) []llm.Message {
 }
 
 // speak synthesises text aloud, returning time to audible start.
-func speak(voice *tts.Piper, text, out string) (time.Duration, error) {
+func speak(voice *tts.Kokoro, text, out string) (time.Duration, error) {
 	samples, sr, _, err := synth(voice, text)
 	if err != nil {
 		return 0, err
@@ -377,7 +377,7 @@ func speak(voice *tts.Piper, text, out string) (time.Duration, error) {
 	return toStart, nil
 }
 
-func runTurn(ctx context.Context, cfg *config.Config, voice *tts.Piper, wav string) {
+func runTurn(ctx context.Context, cfg *config.Config, voice *tts.Kokoro, wav string) {
 	sttClient := stt.New(cfg.WhisperEndpoint)
 	llmClient := llm.New(cfg.LlamaEndpoint)
 
@@ -438,7 +438,7 @@ func playBlocking(path string) (time.Duration, time.Duration) {
 }
 
 // synth voices text and reports synthesis wall time.
-func synth(voice *tts.Piper, text string) ([]int16, int, time.Duration, error) {
+func synth(voice *tts.Kokoro, text string) ([]int16, int, time.Duration, error) {
 	start := time.Now()
 	samples, err := voice.Synth(text)
 	if err != nil {

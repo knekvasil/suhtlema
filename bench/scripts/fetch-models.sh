@@ -17,9 +17,10 @@ fetch() {
   echo "  done ($(du -h "$dest" | cut -f1))"
 }
 
-# LLM (GGUF, Q4_K_M)
-fetch "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf" \
-      "$MODELS/llm/Qwen3-4B-Q4_K_M.gguf"
+# LLM (GGUF, Q4_K_M). Qwen3.5 4B is the primary; Llama 3.2 3B is the
+# memory fallback.
+fetch "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf" \
+      "$MODELS/llm/Qwen3.5-4B-Q4_K_M.gguf"
 fetch "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf" \
       "$MODELS/llm/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
 
