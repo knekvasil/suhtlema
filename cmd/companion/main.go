@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"suhtlema/internal/audio"
 	"suhtlema/internal/config"
 	"suhtlema/internal/llm"
 	"suhtlema/internal/servers"
@@ -28,6 +29,8 @@ usage:
   companion stt <file.wav>      transcribe Spanish audio
   companion chat <text...>      send a message to the companion
   companion say <text...>       speak text aloud via TTS
+  companion listen              record one utterance from the mic, then speak a reply
+  companion converse            live spoken conversation, one turn at a time
   companion turn <file.wav>     transcribe then reply out loud (full turn)
 `)
 }
@@ -75,6 +78,10 @@ func main() {
 			fatal(fmt.Errorf("say needs some text"))
 		}
 		runSay(voice, strings.Join(os.Args[2:], " "), "/tmp/suhtlema-say.wav")
+	case "listen":
+		runListen(ctx, cfg, voice)
+	case "converse":
+		runConverse(ctx, cfg, voice)
 	case "turn":
 		if len(os.Args) < 3 {
 			fatal(fmt.Errorf("turn needs a wav path"))
@@ -124,6 +131,100 @@ func runSay(voice *tts.Piper, text, out string) {
 		synth.Round(time.Millisecond), float64(len(samples))/float64(sr), sr, out)
 	start, _ := playBlocking(out) // audible output completes the loop
 	fmt.Printf("T3->T4 (play) : %s  (to audible start)\n", start.Round(time.Millisecond))
+}
+
+func runListen(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
+	fmt.Println("Escuchando... (termina con una pausa de medio segundo)")
+	recCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	samples, dur, _, err := audio.Record(recCtx)
+	if err != nil {
+		fatal(err)
+	}
+	wav := "/tmp/suhtlema-capture.wav"
+	if err := audio.WriteWAV(wav, samples, audio.SampleRate); err != nil {
+		fatal(err)
+	}
+	fmt.Printf("captured: %.2fs -> %s\n", dur.Seconds(), wav)
+	runTurn(ctx, cfg, voice, wav)
+}
+
+func runConverse(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
+	sttClient := stt.New(cfg.WhisperEndpoint)
+	llmClient := llm.New(cfg.LlamaEndpoint)
+	history := []llm.Message{{Role: "system", Content: systemPrompt}}
+
+	reply := "¡Hola! ¿Qué tal?"
+	if _, err := speak(voice, reply, "/tmp/suhtlema-greet.wav"); err != nil {
+		fatal(err)
+	}
+	history = append(history, llm.Message{Role: "assistant", Content: reply})
+
+	for {
+		fmt.Println("\nEscuchando... (termina con una pausa de medio segundo)")
+		recCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		samples, _, speechEnd, err := audio.Record(recCtx)
+		cancel()
+		if err != nil {
+			fatal(err)
+		}
+		if err := audio.WriteWAV("/tmp/suhtlema-capture.wav", samples, audio.SampleRate); err != nil {
+			fatal(err)
+		}
+
+		learner, _, err := sttClient.Transcribe(ctx, "/tmp/suhtlema-capture.wav")
+		if err != nil {
+			fatal(err)
+		}
+		learner = strings.TrimSpace(learner)
+		if learner == "" {
+			fmt.Println("(no oí nada, repite por favor)")
+			continue
+		}
+		fmt.Printf("learner:   %s\n", learner)
+
+		history = append(history, llm.Message{Role: "user", Content: learner})
+		reply, _, _, err = llmClient.Chat(ctx, history, 100)
+		if err != nil {
+			fatal(err)
+		}
+		reply = strings.TrimSpace(reply)
+		history = append(history, llm.Message{Role: "assistant", Content: reply})
+		history = trimHistory(history)
+
+		fmt.Printf("companion: %s\n", reply)
+		playStart, err := speak(voice, reply, "/tmp/suhtlema-reply.wav")
+		if err != nil {
+			fatal(err)
+		}
+		fmt.Printf("T0 (speech end) -> T4 (audible) : %s\n",
+			time.Now().Add(playStart).Sub(speechEnd).Round(time.Millisecond))
+	}
+}
+
+// trimHistory keeps the system message plus the most recent turns.
+func trimHistory(h []llm.Message) []llm.Message {
+	const maxMessages = 13 // system + 6 turns
+	if len(h) <= maxMessages {
+		return h
+	}
+	out := make([]llm.Message, 0, maxMessages)
+	out = append(out, h[0]) // system
+	out = append(out, h[len(h)-maxMessages+1:]...)
+	return out
+}
+
+// speak synthesises text aloud, returning time to audible start.
+func speak(voice *tts.Piper, text, out string) (time.Duration, error) {
+	samples, sr, _, err := synth(voice, text)
+	if err != nil {
+		return 0, err
+	}
+	if err := writeWAV(out, samples, sr); err != nil {
+		return 0, err
+	}
+	toStart, _ := playBlocking(out)
+	return toStart, nil
 }
 
 func runTurn(ctx context.Context, cfg *config.Config, voice *tts.Piper, wav string) {

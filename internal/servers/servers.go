@@ -45,8 +45,13 @@ func start(name, bin string, args []string, healthURL string) (*Process, error) 
 		return nil, fmt.Errorf("%s binary not found at %s (run bench/scripts/build-toolchains.sh)", name, bin)
 	}
 	cmd := exec.Command(bin, args...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	if f, err := os.Create(fmt.Sprintf("/tmp/suhtlema-%s.log", name)); err == nil {
+		cmd.Stdout = f
+		cmd.Stderr = f
+	} else {
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
