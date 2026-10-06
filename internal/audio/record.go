@@ -72,13 +72,13 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 		finished time.Time
 	)
 	detailed := struct {
-		active       bool
-		startIdx     int
-		speechFrames int
-		silentFrames int
-		floor        float64
-		idleFrames   int
-		runFrames    int
+		active        bool
+		startIdx      int
+		onsetFrames   int // consecutive buffers above onset
+		silentSamples int // samples below offset while active
+		runSamples    int // samples since activation
+		floor         float64
+		idleFrames    int
 	}{}
 
 	callbacks := malgo.DeviceCallbacks{
@@ -106,20 +106,20 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 
 				onset := energy >= minOnsetLevel && energy >= onsetFloorRatio*detailed.floor
 				if onset && detailed.idleFrames >= primeFrames {
-					detailed.speechFrames++
-					if detailed.speechFrames == startFrames {
+					detailed.onsetFrames++
+					if detailed.onsetFrames == startFrames {
 						debugf("onset fired (energy=%.4f floor=%.4f idle=%d)", energy, detailed.floor, detailed.idleFrames)
 					}
-					if detailed.speechFrames >= startFrames {
+					if detailed.onsetFrames >= startFrames {
 						detailed.active = true
-						detailed.speechFrames = 0
-						detailed.silentFrames = 0
-						detailed.runFrames = 0
+						detailed.onsetFrames = 0
+						detailed.silentSamples = 0
+						detailed.runSamples = 0
 						detailed.startIdx = len(buf)
 						debugf("ACTIVE (energy=%.4f floor=%.4f)", energy, detailed.floor)
 					}
 				} else {
-					detailed.speechFrames = 0
+					detailed.onsetFrames = 0
 				}
 				buf = append(buf, frames...)
 				// Keep idle capture to a short pre-roll.
@@ -131,24 +131,24 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 			}
 
 			buf = append(buf, frames...)
-			detailed.runFrames++
+			detailed.runSamples += n
 			offset := offsetFloorRatio * detailed.floor
 			if offset < minOnsetLevel/2 {
 				offset = minOnsetLevel / 2
 			}
 			if energy < offset {
-				detailed.silentFrames++
-				if detailed.silentFrames%8 == 0 {
-					debugf("silent=%d runf=%d (speech=%.2fs silent=%.0fms)",
-						detailed.silentFrames, detailed.runFrames,
-						durationOf(detailed.runFrames).Seconds(), durationOf(detailed.silentFrames).Seconds()*1000)
+				detailed.silentSamples += n
+				if durationOf(detailed.silentSamples) >= Hangover/4 {
+					debugf("silent=%.0fms run=%.2fs (energy=%.4f floor=%.4f)",
+						durationOf(detailed.silentSamples).Seconds()*1000,
+						durationOf(detailed.runSamples).Seconds(), energy, detailed.floor)
 				}
 			} else {
-				detailed.silentFrames = 0
+				detailed.silentSamples = 0
 			}
 
-			speech := durationOf(detailed.runFrames)
-			silent := durationOf(detailed.silentFrames)
+			speech := durationOf(detailed.runSamples)
+			silent := durationOf(detailed.silentSamples)
 			if (silent >= Hangover && speech >= MinDuration) || speech >= MaxDuration {
 				finished = time.Now()
 				debugf("END (speech=%.2fs silent=%.0fms)", speech.Seconds(), silent.Seconds()*1000)
