@@ -57,11 +57,7 @@ func main() {
 	}
 	defer stop()
 
-	sr, err := tts.SampleRate(cfg.TTSJSON)
-	if err != nil {
-		fatal(err)
-	}
-	voice, err := tts.Start(cfg.TTSModel, cfg.TTSPython, cfg.TTSScript, sr)
+	voice, err := tts.Start(cfg.TTSModel, cfg.TTSPython, cfg.TTSScript, cfg.TTSVoices, cfg.TTSVoice, cfg.TTSSampleRate)
 	if err != nil {
 		fatal(err)
 	}

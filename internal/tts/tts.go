@@ -43,8 +43,8 @@ func SampleRate(configJSON string) (int, error) {
 }
 
 // Start launches the daemon with a voice resident.
-func Start(model, python, script string, sampleRate int) (*Piper, error) {
-	cmd := exec.Command(python, script, "--model", model)
+func Start(model, python, script, voices, voice string, sampleRate int) (*Piper, error) {
+	cmd := exec.Command(python, script, "--model", model, "--voices", voices, "--voice", voice)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

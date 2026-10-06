@@ -19,11 +19,13 @@ type Config struct {
 	LlamaEndpoint   string
 	WhisperEndpoint string
 
-	TTSModel  string
-	TTSJSON   string
-	TTSPython string
-	TTSScript string
-	VADModel  string
+	TTSModel      string
+	TTSVoices     string
+	TTSVoice      string
+	TTSSampleRate int
+	TTSPython     string
+	TTSScript     string
+	VADModel      string
 }
 
 const (
@@ -53,8 +55,10 @@ func Load() (*Config, error) {
 	}
 	c.LlamaEndpoint = fmt.Sprintf("http://%s:%d", llamaHost, llamaPort)
 	c.WhisperEndpoint = fmt.Sprintf("http://%s:%d", whisperHost, whisperPort)
-	c.TTSModel = filepath.Join(root, "models/tts/piper/es_ES-carlfm-x_low.onnx")
-	c.TTSJSON = filepath.Join(root, "models/tts/piper/es_ES-carlfm-x_low.onnx.json")
+	c.TTSModel = filepath.Join(root, "models/tts/kokoro-v1.0.fp16.onnx")
+	c.TTSVoices = filepath.Join(root, "models/tts/voices-v1.0.bin")
+	c.TTSVoice = "ef_dora"
+	c.TTSSampleRate = 24000
 	c.TTSPython = filepath.Join(root, "bench/.venv/bin/python")
 	c.TTSScript = filepath.Join(root, "bench/scripts/tts_daemon.py")
 	c.VADModel = filepath.Join(root, "models/tts/silero_vad.onnx")
