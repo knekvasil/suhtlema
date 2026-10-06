@@ -8,11 +8,23 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gen2brain/malgo"
 )
+
+// hangover is the end-of-speech silence needed to close a turn, configurable
+// via SUHTLEMA_HANGOVER_MS to suit the learner's speaking style.
+var hangover = func() time.Duration {
+	if v := os.Getenv("SUHTLEMA_HANGOVER_MS"); v != "" {
+		if ms, err := strconv.Atoi(v); err == nil && ms >= 100 && ms <= 5000 {
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
+	return 500 * time.Millisecond
+}()
 
 func debugf(format string, args ...any) {
 	if os.Getenv("SUHTLEMA_DEBUG") == "1" {
@@ -26,7 +38,6 @@ const (
 	preRollFrames   = 16                 // ~512 ms captured before onset fires
 	primeFrames     = 12                 // idle frames (~384 ms) before onset allowed
 	startFrames     = 3                  // ~96 ms of speech to start
-	Hangover        = 500 * time.Millisecond
 	MinDuration     = 250 * time.Millisecond
 	MaxDuration     = 30 * time.Second
 
@@ -138,7 +149,7 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 			}
 			if energy < offset {
 				detailed.silentSamples += n
-				if durationOf(detailed.silentSamples) >= Hangover/4 {
+				if durationOf(detailed.silentSamples) >= hangover/4 {
 					debugf("silent=%.0fms run=%.2fs (energy=%.4f floor=%.4f)",
 						durationOf(detailed.silentSamples).Seconds()*1000,
 						durationOf(detailed.runSamples).Seconds(), energy, detailed.floor)
@@ -149,7 +160,7 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 
 			speech := durationOf(detailed.runSamples)
 			silent := durationOf(detailed.silentSamples)
-			if (silent >= Hangover && speech >= MinDuration) || speech >= MaxDuration {
+			if (silent >= hangover && speech >= MinDuration) || speech >= MaxDuration {
 				finished = time.Now()
 				debugf("END (speech=%.2fs silent=%.0fms)", speech.Seconds(), silent.Seconds()*1000)
 				close(done)
