@@ -14,8 +14,11 @@ WHISPER_PORT=8081
 cleanup() { kill "${LPID:-}" "${WPID:-}" "${KPID:-}" 2>/dev/null || true; }
 trap cleanup EXIT
 
-echo "==> starting llama-server (Qwen3 4B)"
-"$LBIN/llama-server" -m "$ROOT/models/llm/Qwen3-4B-Q4_K_M.gguf" -c 2048 -ngl 99 \
+LLM_MODEL="${SUHTLEMA_LLM_MODEL:-$ROOT/models/llm/Qwen3.5-4B-Q4_K_M.gguf}"
+LLM_NAME="$(basename "$LLM_MODEL")"
+
+echo "==> starting llama-server ($LLM_NAME)"
+"$LBIN/llama-server" -m "$LLM_MODEL" -c 2048 -ngl 99 --jinja \
   --host 127.0.0.1 --port "$LLAMA_PORT" > "$RES/llama-server.log" 2>&1 &
 LPID=$!
 
@@ -48,7 +51,7 @@ sleep 8
 
 echo "==> sampling memory"
 {
-  echo "# Co-residency: LLM + STT + TTS on 8 GB M1 Air"
+  echo "# Co-residency: LLM + STT + TTS on 8 GB M1 Air ($LLM_NAME)"
   echo
   echo "Sampled $(date '+%Y-%m-%d %H:%M:%S')."
   echo
@@ -56,7 +59,7 @@ echo "==> sampling memory"
   echo
   echo "| process | RSS |"
   echo "|---|---:|"
-  for spec in "$LPID:llama-server (Qwen3 4B)" "$WPID:whisper-server (base)" "$KPID:kokoro (python onnx)"; do
+  for spec in "$LPID:llama-server ($LLM_NAME)" "$WPID:whisper-server (base)" "$KPID:kokoro (python onnx)"; do
     pid="${spec%%:*}"; name="${spec#*:}"
     rss=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')
     if [ -n "$rss" ]; then
@@ -76,8 +79,8 @@ echo "==> sampling memory"
 
 echo "==> timed LLM round-trip (while all resident)"
 t0=$(python3 -c 'import time;print(time.time())')
-curl -s "http://127.0.0.1:$LLAMA_PORT/completion" -H 'Content-Type: application/json' \
-  -d '{"prompt":"Eres un compañero de conversación en español. Responde en 1-2 frases.\nUsuario: Hola, ¿cómo estás?\nCompañero:","n_predict":64,"temperature":0.7,"cache_prompt":true}' \
+curl -s "http://127.0.0.1:$LLAMA_PORT/v1/chat/completions" -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"system","content":"Eres un compañero de conversación en español."},{"role":"user","content":"Hola, ¿cómo estás?"}],"max_tokens":64,"temperature":0.7,"chat_template_kwargs":{"enable_thinking":false},"cache_prompt":true}' \
   > "$RES/llama-completion.json"
 t1=$(python3 -c 'import time;print(time.time())')
 python3 - "$RES/llama-completion.json" "$t0" "$t1" <<'PY' | tee -a "$OUT"
@@ -94,7 +97,7 @@ print(f"- generation: {tm.get('predicted_per_second',0):.1f} tok/s, {tm.get('pre
 print()
 print("Response:")
 print()
-print("> " + d.get("content","").strip().replace("\n"," "))
+print("> " + (d.get("choices") or [{}])[0].get("message", {}).get("content", "").strip().replace("\n", " "))
 PY
 
 echo "==> timed STT round-trip (llama still resident)"

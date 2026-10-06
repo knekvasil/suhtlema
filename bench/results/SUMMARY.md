@@ -41,7 +41,7 @@ Dominated by LLM prefill and generation. This is expected and acceptable for the
 | Gate | Result |
 |---|---|
 | Qwen3 4B ≥ ~15 tok/s after 10-min soak | ✅ **PASS** — 16.7–21.4 tok/s, no collapse |
-| Whisper base + Qwen3 4B + Piper co-reside without swapping | ⚠️ **INCONCLUSIVE** — inference held speed, but the machine was already ~1.9 GB into swap before models loaded. Re-test on a freshly rebooted, quiesced machine. |
+| Whisper base + Qwen3.5 4B + Kokoro co-reside | ✅ **FUNCTIONAL but at the edge** (unrebooted box: 14% free, swap ~4 GB/5.1 GB, LLM 14–21 tok/s). Models alone ≈ 3.4 GB + macOS 2.5+ GB ≈ 6.5/8 GB — no headroom. Re-test after a clean reboot and with other apps closed. |
 
 **Verdict: proceed to M1.** The stack is viable on this hardware. Two open items before trusting the memory number:
 
