@@ -5,7 +5,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BENCH="$ROOT/vendor/llama.cpp/build/bin/llama-bench"
+BENCH="$ROOT/third_party/llama.cpp/build/bin/llama-bench"
 OUTDIR="$ROOT/bench/results"
 DURATION="${1:-600}"   # seconds per model
 TOKENS=512

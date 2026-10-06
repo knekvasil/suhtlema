@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VENDOR="$ROOT/vendor"
+VENDOR="$ROOT/third_party"
 JOBS="$(sysctl -n hw.ncpu)"
 mkdir -p "$VENDOR"
 

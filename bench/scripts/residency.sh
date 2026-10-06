@@ -4,8 +4,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-LBIN="$ROOT/vendor/llama.cpp/build/bin"
-WBIN="$ROOT/vendor/whisper.cpp/build/bin"
+LBIN="$ROOT/third_party/llama.cpp/build/bin"
+WBIN="$ROOT/third_party/whisper.cpp/build/bin"
 RES="$ROOT/bench/results"
 OUT="$RES/residency.md"
 LLAMA_PORT=8080

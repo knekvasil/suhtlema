@@ -15,7 +15,7 @@ import wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-WHISPER = ROOT / "vendor" / "whisper.cpp" / "build" / "bin" / "whisper-cli"
+WHISPER = ROOT / "third_party" / "whisper.cpp" / "build" / "bin" / "whisper-cli"
 AUDIO = ROOT / "bench" / "results" / "stt-audio"
 OUT = ROOT / "bench" / "results" / "stt-bench.md"
 MODELS = {

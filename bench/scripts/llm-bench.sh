@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BENCH="$ROOT/vendor/llama.cpp/build/bin/llama-bench"
+BENCH="$ROOT/third_party/llama.cpp/build/bin/llama-bench"
 OUT="$ROOT/bench/results/llm-bench.md"
 mkdir -p "$(dirname "$OUT")"
 

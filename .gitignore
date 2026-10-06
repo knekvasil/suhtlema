@@ -1,5 +1,5 @@
 # Build artifacts and cloned upstream sources
-vendor/
+third_party/
 build/
 /bin/
 

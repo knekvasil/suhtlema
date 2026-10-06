@@ -40,8 +40,8 @@ func Load() (*Config, error) {
 
 	c := &Config{
 		Root:          root,
-		LlamaServer:   filepath.Join(root, "vendor/llama.cpp/build/bin/llama-server"),
-		WhisperServer: filepath.Join(root, "vendor/whisper.cpp/build/bin/whisper-server"),
+		LlamaServer:   filepath.Join(root, "third_party/llama.cpp/build/bin/llama-server"),
+		WhisperServer: filepath.Join(root, "third_party/whisper.cpp/build/bin/whisper-server"),
 		LlamaModel:    filepath.Join(root, "models/llm/Qwen3-4B-Q4_K_M.gguf"),
 		WhisperModel:  filepath.Join(root, "models/whisper/ggml-base.bin"),
 	}
@@ -56,7 +56,7 @@ func findRoot() (string, error) {
 		return "", err
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "vendor/llama.cpp")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "third_party/llama.cpp")); err == nil {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
