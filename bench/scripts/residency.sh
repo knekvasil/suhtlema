@@ -37,13 +37,14 @@ for _ in $(seq 1 90); do
 done
 
 echo "==> holding Kokoro resident"
-"$ROOT/bench/.venv/bin/python" - <<'PY' &
+ROOT="$ROOT" "$ROOT/bench/.venv/bin/python" - <<'PY' &
+import os
 from pathlib import Path
 from kokoro_onnx import Kokoro
 import time
-root = Path("/Users/kaljunekvasil/Developer/knekvasil/suhtlema")
+root = Path(os.environ["ROOT"])
 k = Kokoro(str(root/"models/tts/kokoro-v1.0.fp16.onnx"), str(root/"models/tts/voices-v1.0.bin"))
-k.create("Hola, esto es una prueba.", voice="ef_dora", lang="es")
+k.create("Hola, esta es una prueba.", voice="ef_dora", lang="es")
 time.sleep(180)
 PY
 KPID=$!
