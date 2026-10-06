@@ -142,7 +142,13 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 						detailed.onsetFrames = 0
 						detailed.silentSamples = 0
 						detailed.runSamples = 0
-						detailed.startIdx = len(buf)
+						// Keep the pre-roll so the first word is not clipped:
+						// start at the beginning of the pre-roll window.
+						start := len(buf) - preRollFrames*n
+						if start < 0 {
+							start = 0
+						}
+						detailed.startIdx = start
 						debugf("ACTIVE (p=%.3f)", p)
 					}
 				} else {

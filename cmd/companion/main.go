@@ -19,9 +19,11 @@ import (
 	"suhtlema/internal/vad"
 )
 
-const systemPrompt = "Eres un compañero de conversación en español. " +
-	"Responde en español, en 1-2 frases cortas y naturales. " +
-	"No expliques, solo conversa."
+const systemPrompt = "Eres un compañero de conversación en español, cercano y natural. " +
+	"Responde en español en 1-3 frases. Varía tus respuestas: a veces pregunta " +
+	"de vuelta, a veces comenta algo, y evita repetir la misma pregunta (" +
+	"\"¿Y tú?\") con demasiada frecuencia. Si el usuario mezcla inglés, " +
+	"responde igual en español. No expliques ni corrijas, solo conversa."
 
 func usage() {
 	fmt.Fprint(os.Stderr, `suhtlema — local Spanish conversation companion
@@ -39,6 +41,34 @@ usage:
 `)
 }
 
+var exitHooks []func()
+
+// fatal runs exit hooks (killing model servers) before exiting — plain
+// os.Exit skips defers and would leave orphaned processes behind.
+func fatal(err error) {
+	for _, h := range exitHooks {
+		h()
+	}
+	fmt.Fprintln(os.Stderr, "error:", err)
+	os.Exit(1)
+}
+
+func needsServers(cmd string) bool {
+	switch cmd {
+	case "stt", "chat", "say", "turn", "listen", "converse":
+		return true
+	}
+	return false
+}
+
+func needsTTS(cmd string) bool {
+	switch cmd {
+	case "say", "turn", "listen", "converse":
+		return true
+	}
+	return false
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -51,17 +81,22 @@ func main() {
 	audio.SetVADModel(cfg.VADModel)
 	ctx := context.Background()
 
-	stop, err := servers.EnsureAll(ctx, cfg)
-	if err != nil {
-		fatal(err)
+	if needsServers(os.Args[1]) {
+		stop, err := servers.EnsureAll(ctx, cfg)
+		if err != nil {
+			fatal(err)
+		}
+		exitHooks = append(exitHooks, stop)
 	}
-	defer stop()
 
-	voice, err := tts.Start(cfg.TTSModel, cfg.TTSPython, cfg.TTSScript, cfg.TTSVoices, cfg.TTSVoice, cfg.TTSSampleRate)
-	if err != nil {
-		fatal(err)
+	var voice *tts.Piper
+	if needsTTS(os.Args[1]) {
+		voice, err = tts.Start(cfg.TTSModel, cfg.TTSPython, cfg.TTSScript, cfg.TTSVoices, cfg.TTSVoice, cfg.TTSSampleRate)
+		if err != nil {
+			fatal(err)
+		}
+		exitHooks = append(exitHooks, voice.Stop)
 	}
-	defer voice.Stop()
 
 	switch os.Args[1] {
 	case "stt":
@@ -80,7 +115,7 @@ func main() {
 		}
 		runSay(voice, strings.Join(os.Args[2:], " "), "/tmp/suhtlema-say.wav")
 	case "record":
-		runRecord(ctx, voice)
+		runRecord(ctx)
 	case "monitor":
 		if err := audio.Monitor(8 * time.Second); err != nil {
 			fatal(err)
@@ -237,7 +272,7 @@ func runListen(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
 	runTurn(ctx, cfg, voice, wav)
 }
 
-func runRecord(ctx context.Context, voice *tts.Piper) {
+func runRecord(ctx context.Context) {
 	fmt.Println("Habla... (mic check)")
 	recCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -429,9 +464,4 @@ func writeWAV(path string, samples []int16, sr int) error {
 	_ = binary.Write(&buf, binary.LittleEndian, uint32(len(data)))
 	buf.Write(data)
 	return os.WriteFile(path, buf.Bytes(), 0o644)
-}
-
-func fatal(err error) {
-	fmt.Fprintln(os.Stderr, "error:", err)
-	os.Exit(1)
 }

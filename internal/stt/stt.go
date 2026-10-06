@@ -47,6 +47,7 @@ func (c *Client) Transcribe(ctx context.Context, wavPath string) (string, time.D
 	}
 	_ = mw.WriteField("language", c.Language)
 	_ = mw.WriteField("response_format", "json")
+	_ = mw.WriteField("prompt", "Hola, ¿qué tal? Ayer fui, entonces, gracias, bueno, pues. Sí, no, ¿eh?")
 	mw.Close()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Endpoint+"/inference", &body)

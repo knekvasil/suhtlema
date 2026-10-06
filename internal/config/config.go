@@ -50,7 +50,7 @@ func Load() (*Config, error) {
 		Root:          root,
 		LlamaServer:   filepath.Join(root, "third_party/llama.cpp/build/bin/llama-server"),
 		WhisperServer: filepath.Join(root, "third_party/whisper.cpp/build/bin/whisper-server"),
-		LlamaModel:    filepath.Join(root, "models/llm/Qwen3-4B-Q4_K_M.gguf"),
+		LlamaModel:    filepath.Join(root, "models/llm/Qwen3.5-4B-Q4_K_M.gguf"),
 		WhisperModel:  filepath.Join(root, "models/whisper/ggml-base.bin"),
 	}
 	c.LlamaEndpoint = fmt.Sprintf("http://%s:%d", llamaHost, llamaPort)
