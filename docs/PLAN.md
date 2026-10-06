@@ -190,6 +190,10 @@ Deliverable: benchmark table (below).
 
 Mic → VAD → STT → LLM → TTS → Speaker, one Turn at a time, with full T0–T4 instrumentation.
 
+**Status: WORKING.** A 7-turn live conversation ran with correct transcription, fluent Spanish replies, and audible Castilian output. Measured end-of-speech → first audible ≈ 3–9 s (sequential; no bar yet). The engine energy-VAD is interim and borderline-tunable (`SUHTLEMA_HANGOVER_MS`); Silero is the replacement.
+
+Run it: `./bin/companion converse` (plus `stt`, `chat`, `say`, `record`, `monitor`, `turn` subcommands).
+
 Deliverable: a 5-minute spoken Spanish conversation with recorded latency numbers. No latency bar yet.
 
 ### Milestone 2 — Streaming
