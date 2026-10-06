@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -11,6 +14,7 @@ import (
 	"suhtlema/internal/llm"
 	"suhtlema/internal/servers"
 	"suhtlema/internal/stt"
+	"suhtlema/internal/tts"
 )
 
 const systemPrompt = "Eres un compañero de conversación en español. " +
@@ -21,9 +25,10 @@ func usage() {
 	fmt.Fprint(os.Stderr, `suhtlema — local Spanish conversation companion
 
 usage:
-  companion stt <file.wav>     transcribe Spanish audio
-  companion chat <text...>     send a message to the companion
-  companion turn <file.wav>    transcribe then reply (STT -> LLM)
+  companion stt <file.wav>      transcribe Spanish audio
+  companion chat <text...>      send a message to the companion
+  companion say <text...>       speak text aloud via TTS
+  companion turn <file.wav>     transcribe then reply out loud (full turn)
 `)
 }
 
@@ -37,11 +42,22 @@ func main() {
 		fatal(err)
 	}
 	ctx := context.Background()
+
 	stop, err := servers.EnsureAll(ctx, cfg)
 	if err != nil {
 		fatal(err)
 	}
 	defer stop()
+
+	sr, err := tts.SampleRate(cfg.TTSJSON)
+	if err != nil {
+		fatal(err)
+	}
+	voice, err := tts.Start(cfg.TTSModel, cfg.TTSPython, cfg.TTSScript, sr)
+	if err != nil {
+		fatal(err)
+	}
+	defer voice.Stop()
 
 	switch os.Args[1] {
 	case "stt":
@@ -54,11 +70,16 @@ func main() {
 			fatal(fmt.Errorf("chat needs some text"))
 		}
 		runChat(ctx, cfg, strings.Join(os.Args[2:], " "))
+	case "say":
+		if len(os.Args) < 3 {
+			fatal(fmt.Errorf("say needs some text"))
+		}
+		runSay(voice, strings.Join(os.Args[2:], " "), "/tmp/suhtlema-say.wav")
 	case "turn":
 		if len(os.Args) < 3 {
 			fatal(fmt.Errorf("turn needs a wav path"))
 		}
-		runTurn(ctx, cfg, os.Args[2])
+		runTurn(ctx, cfg, voice, os.Args[2])
 	default:
 		usage()
 		os.Exit(2)
@@ -90,29 +111,113 @@ func runChat(ctx context.Context, cfg *config.Config, text string) {
 		t.PromptMS, t.PredictedPerSecond, d.Round(time.Millisecond))
 }
 
-func runTurn(ctx context.Context, cfg *config.Config, wav string) {
+func runSay(voice *tts.Piper, text, out string) {
+	samples, sr, synth, err := synth(voice, text)
+	if err != nil {
+		fatal(err)
+	}
+	if err := writeWAV(out, samples, sr); err != nil {
+		fatal(err)
+	}
+	fmt.Printf("said:  %s\n", strings.TrimSpace(text))
+	fmt.Printf("tts:   %s  (%.2fs audio, %d Hz) -> %s\n",
+		synth.Round(time.Millisecond), float64(len(samples))/float64(sr), sr, out)
+	start, _ := playBlocking(out) // audible output completes the loop
+	fmt.Printf("T3->T4 (play) : %s  (to audible start)\n", start.Round(time.Millisecond))
+}
+
+func runTurn(ctx context.Context, cfg *config.Config, voice *tts.Piper, wav string) {
 	sttClient := stt.New(cfg.WhisperEndpoint)
 	llmClient := llm.New(cfg.LlamaEndpoint)
 
+	t0 := time.Now()
 	learner, sttDur, err := sttClient.Transcribe(ctx, wav)
 	if err != nil {
 		fatal(err)
 	}
+	t1 := t0.Add(sttDur)
 	fmt.Printf("learner: %s\n", strings.TrimSpace(learner))
 
 	msgs := []llm.Message{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: strings.TrimSpace(learner)},
 	}
-	reply, t, d, err := llmClient.Chat(ctx, msgs, 100)
+	reply, t, llmWall, err := llmClient.Chat(ctx, msgs, 100)
 	if err != nil {
 		fatal(err)
 	}
+	t2 := t1.Add(llmWall)
 	fmt.Printf("companion: %s\n", strings.TrimSpace(reply))
-	fmt.Printf("\nT0->T1 (stt)  : %s\n", sttDur.Round(time.Millisecond))
-	fmt.Printf("T1->T2 (ttft) : %.0fms\n", t.PromptMS)
-	fmt.Printf("T2->end(gen)  : %.0fms  (%.1f tok/s)\n", t.PredictedMS, t.PredictedPerSecond)
-	fmt.Printf("turn wall     : %s\n", (sttDur + d).Round(time.Millisecond))
+
+	samples, sr, synthDur, err := synth(voice, strings.TrimSpace(reply))
+	if err != nil {
+		fatal(err)
+	}
+	t3 := t2.Add(synthDur)
+	out := "/tmp/suhtlema-turn.wav"
+	if err := writeWAV(out, samples, sr); err != nil {
+		fatal(err)
+	}
+
+	playStart, playDuration := playBlocking(out)
+	t4 := t3.Add(playStart)
+
+	fmt.Printf("\nT0->T1 (stt)   : %s\n", sttDur.Round(time.Millisecond))
+	fmt.Printf("T1->T2 (llm)   : %s  (TTFT %.0fms, %.1f tok/s)\n",
+		llmWall.Round(time.Millisecond), t.PromptMS, t.PredictedPerSecond)
+	fmt.Printf("T2->T3 (tts)   : %s  (%.2fs audio)\n", synthDur.Round(time.Millisecond), float64(len(samples))/float64(sr))
+	fmt.Printf("T3->T4 (play)  : %s  (to audible start; then playing %.2fs)\n",
+		playStart.Round(time.Millisecond), playDuration.Seconds())
+	fmt.Printf("T0->T4 (total) : %s  (end of speech -> first audible AI)\n", t4.Sub(t0).Round(time.Millisecond))
+}
+
+// playBlocking plays audio aloud via afplay. Returns (time to audible start,
+// playback duration) and blocks until playback finishes so the servers stay
+// warm while the user listens.
+func playBlocking(path string) (time.Duration, time.Duration) {
+	cmd := exec.Command("afplay", path)
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "warn: playback failed: %v\n", err)
+		return time.Since(start), 0
+	}
+	toStart := time.Since(start)
+	_ = cmd.Wait()
+	return toStart, time.Since(start) - toStart
+}
+
+// synth voices text and reports synthesis wall time.
+func synth(voice *tts.Piper, text string) ([]int16, int, time.Duration, error) {
+	start := time.Now()
+	samples, err := voice.Synth(text)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return samples, voice.SampleRate, time.Since(start), nil
+}
+
+// writeWAV writes int16 mono PCM as a 16 kHz WAV file.
+func writeWAV(path string, samples []int16, sr int) error {
+	var buf bytes.Buffer
+	data := make([]byte, len(samples)*2)
+	for i, s := range samples {
+		binary.LittleEndian.PutUint16(data[i*2:], uint16(s))
+	}
+	byteRate := sr * 2
+	buf.WriteString("RIFF")
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(36+len(data)))
+	buf.WriteString("WAVEfmt ")
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(16))
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(1)) // PCM
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(1)) // mono
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(sr))
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(byteRate))
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(2))  // block align
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(16)) // bits per sample
+	buf.WriteString("data")
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(len(data)))
+	buf.Write(data)
+	return os.WriteFile(path, buf.Bytes(), 0o644)
 }
 
 func fatal(err error) {
