@@ -2,7 +2,7 @@
 
 Status: accepted
 
-We use whisper.cpp for STT and llama.cpp for the LLM, offload the Whisper encoder and Kokoro TTS to Apple's Neural Engine via Core ML, and orchestrate in Go. MLX was rejected for the latency-critical path despite being ~1.3–2× faster on Apple Silicon, because it is Python-first and would drag an interpreter into the critical path, undermining the Go orchestration and control over the real-time loop. Keeping the LLM on the GPU and STT/TTS on the ANE also prevents three stages from contending for the same silicon on a fanless chip.
+We use whisper.cpp for STT and llama.cpp for the LLM, keep TTS on onnxruntime, and orchestrate in Go. MLX was rejected for the latency-critical path despite being ~1.3–2× faster on Apple Silicon, because it is Python-first and would drag an interpreter into the critical path, undermining the Go orchestration and control over the real-time loop. The Whisper encoder can additionally be offloaded to the Neural Engine via Core ML so that it does not contend with the LLM for the GPU on a fanless chip.
 
 ## Considered options
 

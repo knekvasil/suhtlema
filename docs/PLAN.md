@@ -69,14 +69,14 @@ Multilingual, not `.en`: Spanish is a core use case.
 
 Sustained figures are from a 10-minute thermal soak on the fanless Air (raw data in `bench/results/soak-*.csv`).
 
-Qwen3 is a reasoning model: **thinking must be disabled** (`/no_think` or the non-thinking chat template) or it will wreck both latency and conversational tone. If Qwen3 4B + Whisper base + Kokoro will not co-reside within the GPU wire limit, drop the LLM to 3B — do **not** shrink Whisper.
+Qwen3 is a reasoning model: **thinking must be disabled** (`/no_think` or the non-thinking chat template) or it will wreck both latency and conversational tone. If Qwen3 4B + Whisper base + Piper will not co-reside within the GPU wire limit, drop the LLM to 3B — do **not** shrink Whisper.
 
-### TTS — Kokoro-82M
+### TTS — Piper `es_ES-carlfm-x_low`
 
-- `kokoro-v1.0.fp16.onnx` (169 MB) via ONNX Runtime.
-- Measured on CPU ONNX: **~3.7× RT** (~260 ms for a 1 s clause) — *not* the ~20× achieved by MLX on larger chips. The ANE/CoreML offload is what must close this gap; treat it as required, not optional.
-- Spanish voices: `ef_dora` (female), `em_alex` (male), `em_santa`.
-- **Known risk:** Kokoro's Spanish voices are trained on far less data than its English voices. Sentence-level naturalness must be verified by human listen, not assumed. This is the leading quality threat to the "natural voice" success criterion.
+- The target is **Castilian (Spain)** Spanish. Kokoro's Spanish voices are Latin American and slow (**3.7× RT**), so it was rejected — see ADR-0005.
+- Piper `es_ES-carlfm-x_low.onnx` (27 MB) via onnxruntime, **~45× RT** (~70 ms for a 2.8 s utterance).
+- Whisper's encoder and TTS therefore fit comfortably on the CPU; the ANE offload is no longer required for the latency budget.
+- Trade-off accepted: Piper is less expressive than Kokoro. Alternative Castilian voices (`es_ES-sharvard-medium`, `es_ES-davefx-medium`, Coqui CSS10, Mimic3) were generated for comparison in `bench/results/audio-castilian/`.
 
 ### Memory budget
 
@@ -84,7 +84,7 @@ Qwen3 is a reasoning model: **thinking must be disabled** (`/no_think` or the no
 |---|---|
 | Whisper base | ~0.4 GB |
 | Qwen3 4B Q4_K_M | ~2.3 GB |
-| Kokoro fp16 | ~0.5 GB |
+| Piper carlfm | ~0.1 GB |
 | KV cache (2048 ctx) | ~0.5 GB |
 | macOS + Go + ONNX | ~2.5 GB |
 | **Total** | **~6.2 GB** |
@@ -98,7 +98,7 @@ The GPU working-set ceiling reported by llama.cpp on this machine is **5727 MB**
 ┌────────────────────────────────────────────────┐
 │  malgo audio in/out                            │
 │  Silero VAD v5 (ONNX, in-process)              │
-│  Kokoro TTS (ONNX, in-process)                 │
+│  Piper TTS (ONNX, in-process)                  │
 │  orchestrator / metrics                        │
 └───────┬───────────────────────────┬────────────┘
         │ localhost                 │ localhost
@@ -177,10 +177,10 @@ Establish what this specific machine does. **Vendor benches plus a soak, no besp
 
 - `llama-bench` → pp/tg tok/s per model/quant/context.
 - `whisper-bench` → RTF; plus a fixed Spanish audio set for WER.
-- Kokoro timing script → RTFA + audio dumps for a human quality listen.
+- TTS timing scripts → RTF + audio dumps for a human quality listen (Castilian voices compared).
 - **10-minute continuous soak** per model, recording tok/s at minute 1/5/10.
 
-**Go/no-go:** Qwen3 4B holds ≥ ~15 tok/s after the soak, and Whisper base + Qwen3 4B + Kokoro co-reside without swapping.
+**Go/no-go:** Qwen3 4B holds ≥ ~15 tok/s after the soak, and Whisper base + Qwen3 4B + Piper co-reside without swapping.
 
 **Status: PASS on speed (16.7–21.4 tok/s sustained); co-residency needs a re-test on a quiesced machine.** See `bench/results/SUMMARY.md` for measured numbers and `bench/scripts/` for the harness.
 
@@ -218,9 +218,9 @@ Phoneme alignment, acoustic analysis, prosody, targeted feedback. Only after con
 
 | Configuration | STT | LLM | TTS | TTFA | p50 T0→T4 | Quality |
 |---|---|---|---|---|---|---|
-| A | base ml | Llama 3.2 3B | Kokoro fp16 | — | — | — |
-| B | base ml | **Qwen3 4B** | Kokoro fp16 | — | — | — |
-| C | small | Qwen3 4B | Kokoro fp16 | — | — | — |
+| A | base ml | Llama 3.2 3B | Piper carlfm | — | — | — |
+| B | base ml | **Qwen3 4B** | Piper carlfm | — | — | — |
+| C | small | Qwen3 4B | Piper carlfm | — | — | — |
 
 (Rows for Llama 3.2 1B, ElevenLabs, and cloud configurations are removed: 1B cannot hold Spanish conversation, and nothing leaves the machine.)
 
@@ -229,8 +229,8 @@ Phoneme alignment, acoustic analysis, prosody, targeted feedback. Only after con
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Fanless thermal throttling | tok/s collapses after minutes | 10-min soak in M0; keep context and replies small |
-| Kokoro Spanish voice quality | "natural voice" goal unmet | human listen in M0; it is the fallback to revisit, not the default assumption |
-| Model co-residency / GPU wire limit | swap, latency spikes | measured budget (~6.6 GB); drop LLM to 3B before shrinking Whisper |
+| Piper voice expressiveness | "natural voice" feels robotic | carlfm chosen over Kokoro for accent + speed; other Castilian voices in `bench/results/audio-castilian/`; XTTS cloning as fallback |
+| Model co-residency / GPU wire limit | swap, latency spikes | measured budget (~5.8 GB); drop LLM to 3B before shrinking Whisper |
 | Qwen3 thinking mode | latency + tone | disable thinking explicitly; verify in M0 |
 | Whisper partial cost (M2) | starves LLM on shared GPU | Whisper encoder on ANE; stable-prefix emit |
 | Commit/re-anchor mismatch rate (M2) | wasted prefill, or wrong speech | generate-early/commit-before-speak; fall back to waiting for final if mismatch is high |
@@ -240,4 +240,4 @@ Phoneme alignment, acoustic analysis, prosody, targeted feedback. Only after con
 
 The project succeeds if you can forget you are talking to a pipeline. The test is not "is the model impressive?" but "can I have a 20-minute conversation without becoming annoyed by the latency or the interaction?" Latency is the primary engineering metric.
 
-The first thing to build is not the application — it is the answer to: **can an 8 GB fanless M1 Air run Whisper + a 4B LLM + Kokoro quickly enough to feel like a conversation?** Milestone 0 answers that. Everything else follows.
+The first thing to build is not the application — it is the answer to: **can an 8 GB fanless M1 Air run Whisper + a 4B LLM + Piper quickly enough to feel like a conversation?** Milestone 0 answers that. Everything else follows.
