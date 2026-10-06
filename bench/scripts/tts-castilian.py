@@ -21,6 +21,7 @@ VOICES = [
     "es_ES-davefx-medium",     # male
     "es_ES-carlfm-x_low",      # male, fast/low
     "es_ES-mls_10246-low",     # female
+    "es_ES-mls_9972-low",      # female
 ]
 
 SENTENCES = {
