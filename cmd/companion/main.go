@@ -138,6 +138,11 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+
+	// Normal exit: run hooks (kills model servers) even without an error.
+	for _, h := range exitHooks {
+		h()
+	}
 }
 
 func runSTT(ctx context.Context, cfg *config.Config, wav string) {

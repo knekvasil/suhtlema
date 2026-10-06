@@ -63,9 +63,9 @@ Multilingual, not `.en`: Spanish is a core use case.
 | Model | Quant | RAM | Measured sustained | Role |
 |---|---|---|---|---|
 | Llama 3.2 1B | Q4 | ~0.9 GB | — | rejected: too weak for Spanish |
-| **Qwen3 4B** | Q4_K_M | ~2.3 GB | **19.1 tok/s** (min 16.7) | **primary** |
+| **Qwen3.5 4B** | Q4_K_M | ~2.6 GB | **17.8 tok/s** (bench) | **primary** |
 | Llama 3.2 3B | Q4_K_M | ~1.9 GB | 23.9 tok/s (min 20.8) | memory fallback only |
-| Qwen 3.5 4B | Q4 | ~2.3 GB | — | optional newer alternative |
+| Qwen3 4B | Q4_K_M | ~2.3 GB | 19.1 tok/s (min 16.7) | superseded; kept as fallback |
 
 Sustained figures are from a 10-minute thermal soak on the fanless Air (raw data in `bench/results/soak-*.csv`).
 
