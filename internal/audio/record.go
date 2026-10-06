@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"sync"
@@ -12,6 +13,12 @@ import (
 
 	"github.com/gen2brain/malgo"
 )
+
+func debugf(format string, args ...any) {
+	if os.Getenv("SUHTLEMA_DEBUG") == "1" {
+		fmt.Fprintf(os.Stderr, "[vad] "+format+"\n", args...)
+	}
+}
 
 const (
 	SampleRate      = 16000
@@ -100,12 +107,16 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 				onset := energy >= minOnsetLevel && energy >= onsetFloorRatio*detailed.floor
 				if onset && detailed.idleFrames >= primeFrames {
 					detailed.speechFrames++
+					if detailed.speechFrames == startFrames {
+						debugf("onset fired (energy=%.4f floor=%.4f idle=%d)", energy, detailed.floor, detailed.idleFrames)
+					}
 					if detailed.speechFrames >= startFrames {
 						detailed.active = true
 						detailed.speechFrames = 0
 						detailed.silentFrames = 0
 						detailed.runFrames = 0
 						detailed.startIdx = len(buf)
+						debugf("ACTIVE (energy=%.4f floor=%.4f)", energy, detailed.floor)
 					}
 				} else {
 					detailed.speechFrames = 0
@@ -127,6 +138,11 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 			}
 			if energy < offset {
 				detailed.silentFrames++
+				if detailed.silentFrames%8 == 0 {
+					debugf("silent=%d runf=%d (speech=%.2fs silent=%.0fms)",
+						detailed.silentFrames, detailed.runFrames,
+						durationOf(detailed.runFrames).Seconds(), durationOf(detailed.silentFrames).Seconds()*1000)
+				}
 			} else {
 				detailed.silentFrames = 0
 			}
@@ -135,6 +151,7 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 			silent := durationOf(detailed.silentFrames)
 			if (silent >= Hangover && speech >= MinDuration) || speech >= MaxDuration {
 				finished = time.Now()
+				debugf("END (speech=%.2fs silent=%.0fms)", speech.Seconds(), silent.Seconds()*1000)
 				close(done)
 			}
 		},
