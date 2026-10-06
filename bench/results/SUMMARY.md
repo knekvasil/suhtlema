@@ -12,17 +12,17 @@ Raw data: `llm-bench.md`, `soak-*.csv`, `tts-kokoro.md`, `stt-bench.md`, `reside
 | STT | Whisper tiny | ~19–23× RT | ~159 ms | 2.1% WER; weaker on real speech |
 | LLM | **Qwen3 4B Q4_K_M** | **19.1 tok/s** sustained (min 16.7) | prefill ~180 tok/s | best Spanish |
 | LLM | Llama 3.2 3B Q4_K_M | 23.9 tok/s sustained (min 20.8) | prefill ~238 tok/s | weaker Spanish; memory fallback |
-| TTS | ~~Kokoro fp16~~ → **Piper `es_ES-carlfm-x_low`** | **~45× RT** (CPU ONNX) | ~70 ms for a 2.8 s utterance | Castilian accent; listen in `audio-castilian/` |
+| TTS | **Kokoro `ef_dora`** (fp16, ONNX) | **~4× RT** (CPU ONNX) | ~264 ms for a ~1 s utterance | natural voice; Latin American accent |
 
-Note: Kokoro measured **~4× RT, not the ~20× the plan assumed** (that figure was MLX on an M1 Max), and its Spanish accent is Latin American. Piper Castilian is both correct-accent and ~45×, so it replaces Kokoro (ADR-0005) and removes the need for ANE offload.
+Note: Piper's `es_ES-carlfm-x_low` (Castilian, ~45× RT) replaced Kokoro for the accent, but **glitched and cut out during conversation**; quality won over accent and TTS is back on **Kokoro `ef_dora`** (ADR-0005 superseded). Kokoro measures ~4× RT — the ~20× figure the plan assumed was MLX on an M1 Max — which is fine for short replies in the sequential milestone.
 
 ## Configuration comparison
 
 | Configuration | STT | LLM | TTS | Sustained LLM | STT warm | TTS RTF |
 |---|---|---|---|---|---|---|
-| A | base | Llama 3.2 3B | Piper carlfm | 23.9 tok/s | 187 ms | 45× |
-| **B** | base | **Qwen3 4B** | Piper carlfm | **19.1 tok/s** | 187 ms | 45× |
-| C | small | Qwen3 4B | Piper carlfm | 19.1 tok/s | 511 ms | 45× |
+| A | base | Llama 3.2 3B | Kokoro ef_dora | 23.9 tok/s | 187 ms | ~4× |
+| **B** | base | **Qwen3 4B** | Kokoro ef_dora | **19.1 tok/s** | 187 ms | ~4× |
+| C | small | Qwen3 4B | Kokoro ef_dora | 19.1 tok/s | 511 ms | ~4× |
 
 **Recommendation: Configuration B.** B is chosen over A for Spanish quality, and C's STT improvement (3.6% → 1.4% WER on *clean* audio) is not worth tripling STT latency — and that WER gap will shrink on real speech anyway.
 
@@ -41,9 +41,6 @@ Dominated by LLM prefill and generation. This is expected and acceptable for the
 | Gate | Result |
 |---|---|
 | Qwen3 4B ≥ ~15 tok/s after 10-min soak | ✅ **PASS** — 16.7–21.4 tok/s, no collapse |
-| Whisper base + Qwen3.5 4B + Kokoro co-reside | ✅ **FUNCTIONAL but at the edge** (unrebooted box: 14% free, swap ~4 GB/5.1 GB, LLM 14–21 tok/s). Models alone ≈ 3.4 GB + macOS 2.5+ GB ≈ 6.5/8 GB — no headroom. Re-test after a clean reboot and with other apps closed. |
+| Whisper base + Qwen3.5 4B + Kokoro co-reside | ✅ **PASS** (clean reboot: 24% free, **0 swap**, ~2.1 GB RSS — LLM 1682 MB + Whisper 177 MB + Kokoro 263 MB; LLM 18.3 tok/s, STT 301 ms). The earlier "at the edge" reading (14% free, ~4 GB swap) was a dirty, unrebooted box. |
 
-**Verdict: proceed to M1.** The stack is viable on this hardware. Two open items before trusting the memory number:
-
-1. Re-run `bench/scripts/residency.sh` immediately after a reboot with nothing else open.
-2. **Listen** to `bench/results/audio-castilian/es_ES-carlfm-x_low_castilian.wav` to confirm the chosen Castilian voice; alternatives are alongside it.
+**Verdict: proceed to M1.** The stack is viable on this hardware. No open items.

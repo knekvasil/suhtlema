@@ -1,3 +1,11 @@
+# Agent context documents
+CONTEXT.md
+AGENTS.md
+CLAUDE.md
+.opencode/
+docs/PLAN.md
+docs/adr/
+
 # Build artifacts and cloned upstream sources
 third_party/
 build/
