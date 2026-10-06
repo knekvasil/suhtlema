@@ -29,6 +29,7 @@ usage:
   companion stt <file.wav>      transcribe Spanish audio
   companion chat <text...>      send a message to the companion
   companion say <text...>       speak text aloud via TTS
+  companion record             capture one utterance and play it back (mic check)
   companion listen              record one utterance from the mic, then speak a reply
   companion converse            live spoken conversation, one turn at a time
   companion turn <file.wav>     transcribe then reply out loud (full turn)
@@ -78,6 +79,8 @@ func main() {
 			fatal(fmt.Errorf("say needs some text"))
 		}
 		runSay(voice, strings.Join(os.Args[2:], " "), "/tmp/suhtlema-say.wav")
+	case "record":
+		runRecord(ctx, voice)
 	case "listen":
 		runListen(ctx, cfg, voice)
 	case "converse":
@@ -149,6 +152,22 @@ func runListen(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
 	runTurn(ctx, cfg, voice, wav)
 }
 
+func runRecord(ctx context.Context, voice *tts.Piper) {
+	fmt.Println("Habla... (mic check)")
+	recCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	samples, dur, _, err := audio.Record(recCtx)
+	if err != nil {
+		fatal(err)
+	}
+	wav := "/tmp/suhtlema-record.wav"
+	if err := audio.WriteWAV(wav, samples, audio.SampleRate); err != nil {
+		fatal(err)
+	}
+	fmt.Printf("captured %.2fs  rms=%.3f  -> %s\n", dur.Seconds(), audio.RMS(samples), wav)
+	_, _ = playBlocking(wav) // hear what the mic actually heard
+}
+
 func runConverse(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
 	sttClient := stt.New(cfg.WhisperEndpoint)
 	llmClient := llm.New(cfg.LlamaEndpoint)
@@ -163,7 +182,7 @@ func runConverse(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
 	for {
 		fmt.Println("\nEscuchando... (termina con una pausa de medio segundo)")
 		recCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		samples, _, speechEnd, err := audio.Record(recCtx)
+		samples, dur, speechEnd, err := audio.Record(recCtx)
 		cancel()
 		if err != nil {
 			fatal(err)
@@ -171,6 +190,7 @@ func runConverse(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
 		if err := audio.WriteWAV("/tmp/suhtlema-capture.wav", samples, audio.SampleRate); err != nil {
 			fatal(err)
 		}
+		fmt.Printf("captured %.2fs  rms=%.3f\n", dur.Seconds(), audio.RMS(samples))
 
 		learner, _, err := sttClient.Transcribe(ctx, "/tmp/suhtlema-capture.wav")
 		if err != nil {
@@ -178,7 +198,8 @@ func runConverse(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
 		}
 		learner = strings.TrimSpace(learner)
 		if learner == "" {
-			fmt.Println("(no oí nada, repite por favor)")
+			_ = audio.WriteWAV("/tmp/suhtlema-unheard.wav", samples, audio.SampleRate)
+			fmt.Println("(no oí nada — repite por favor; saved to /tmp/suhtlema-unheard.wav)")
 			continue
 		}
 		fmt.Printf("learner:   %s\n", learner)

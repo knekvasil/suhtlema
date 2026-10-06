@@ -171,3 +171,9 @@ func rms(frames []int16) float64 {
 	}
 	return math.Sqrt(sum / float64(len(frames)))
 }
+
+// RMS reports the overall normalized root-mean-square level of a signal
+// (0..1). Useful for diagnosing VAD sensitivity.
+func RMS(samples []int16) float64 {
+	return rms(samples)
+}
