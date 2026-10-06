@@ -196,6 +196,10 @@ func runConverse(ctx context.Context, cfg *config.Config, voice *tts.Piper) {
 			fatal(err)
 		}
 		fmt.Printf("captured %.2fs  rms=%.3f\n", dur.Seconds(), audio.RMS(samples))
+		if audio.RMS(samples) < 0.015 && dur < 3*time.Second {
+			fmt.Println("(no oí nada claro — repite por favor)")
+			continue
+		}
 
 		learner, _, err := sttClient.Transcribe(ctx, "/tmp/suhtlema-capture.wav")
 		if err != nil {
