@@ -15,16 +15,20 @@ import (
 
 const (
 	SampleRate      = 16000
-	FramesPerBuffer = 512 // ~32 ms
-	frameDur        = time.Duration(FramesPerBuffer) * time.Second / SampleRate
-	preRollFrames   = 16 // ~512 ms captured before onset fires
+	FramesPerBuffer = 512                // ~32 ms
+	preRollFrames   = 16                 // ~512 ms captured before onset fires
 	startThreshold  = 0.020
 	endThreshold    = 0.015
-	startFrames     = 3 // ~96 ms of speech to start
+	startFrames     = 3                  // ~96 ms of speech to start
 	Hangover        = 500 * time.Millisecond
 	MinDuration     = 250 * time.Millisecond
 	MaxDuration     = 30 * time.Second
 )
+
+// durationOf converts a frame count to a wall duration at SampleRate.
+func durationOf(frames int) time.Duration {
+	return time.Duration(frames) * time.Second / SampleRate
+}
 
 // ErrNoSpeech is returned when the microphone never crossed the onset
 // threshold.
@@ -101,8 +105,8 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 				detailed.silentFrames = 0
 			}
 
-			speech := time.Duration(len(buf)-detailed.startIdx) * frameDur
-			silent := time.Duration(detailed.silentFrames) * frameDur
+			speech := durationOf(len(buf) - detailed.startIdx)
+			silent := durationOf(detailed.silentFrames)
 			if (silent >= Hangover && speech >= MinDuration) || speech >= MaxDuration {
 				finished = time.Now()
 				close(done)
@@ -133,7 +137,7 @@ func Record(ctx context.Context) (samples []int16, dur time.Duration, speechEnd 
 	n := len(out)
 	end := finished
 	mu.Unlock()
-	return out, time.Duration(n) * frameDur, end, nil
+	return out, durationOf(n), end, nil
 }
 
 // WriteWAV writes int16 mono PCM as a WAV file.
